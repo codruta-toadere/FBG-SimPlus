@@ -12,6 +12,8 @@ This application is a fiber Bragg grating (FBG) simulation tool for Finite Eleme
 + Temperature
 </br></br>
 
+-- will do --
+
 ![FBG-SimPlus Cover](python/GUI/resources/header.png)
 
 ### Quick Start Guide
