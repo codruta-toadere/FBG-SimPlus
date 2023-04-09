@@ -1,4 +1,5 @@
-""" 
+#!/usr/bin/env python3
+"""
 Build program GUIs and check input fields for valid format
 
 Copyright (C) 2021 Ben Frey
