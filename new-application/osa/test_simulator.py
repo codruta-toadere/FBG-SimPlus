@@ -17,14 +17,14 @@ def init_params():
         fbg_length=9,
         tolerance=0.01,
         fbg_positions=list(),
-        initial_refractive_index=np.float64(1.46),
+        initial_refractive_index=1.46,
         directional_refractive_p11=0,
         directional_refractive_p12=0,
         poissons_coefficient=0,
-        resolution=np.float64(0.05),
-        min_bandwidth=np.float64(1500.0),
-        max_bandwidth=np.float64(1600.0),
-        mean_change_refractive_index=np.float64("4.5E-4"),
+        resolution=0.05,
+        min_bandwidth=1500.0,
+        max_bandwidth=1600.0,
+        mean_change_refractive_index=4.5e-4,
         fringe_visibility=np.float64(1),
         emulate_temperature=293.15,  # 373.15,
         original_wavelengths=[1500.0, 1525.0, 1550.0, 1575.0, 1600.0],
@@ -52,7 +52,7 @@ def test_valid_data_from_file(init_params):
     """Compare FBG data with old simulator"""
     units = SiUnits.MILLIMETERS
     ref_sim = OSASimulation(
-        filename="sample/tut-export.txt",
+        filename="sample/tut-export-limited.txt",
         NumberFBG=init_params["fbg_count"],
         FBGLength=init_params["fbg_length"],
         Tolerance=init_params["tolerance"],
@@ -63,7 +63,7 @@ def test_valid_data_from_file(init_params):
     ref_data = ref_sim.FBGArray
 
     simu = OsaSimulator(**init_params)
-    data = simu.from_file("sample/tut-export.txt", units=units)
+    data = simu.from_file("sample/tut-export-limited.txt", units=units)
     assert_fbg_equals(ref_data, data)
 
 
@@ -71,7 +71,7 @@ def test_undeformed_fbg(init_params):
     units = SiUnits.MILLIMETERS
     ## Prepare reference simulation
     ref_sim = OSASimulation(
-        filename="sample/tut-export.txt",
+        filename="sample/tut-export-limited.txt",
         NumberFBG=init_params["fbg_count"],
         FBGLength=init_params["fbg_length"],
         Tolerance=init_params["tolerance"],
@@ -95,7 +95,7 @@ def test_undeformed_fbg(init_params):
 
     ## Prepare simulation to be tested
     simu = OsaSimulator(**init_params)
-    simu.from_file("sample/tut-export.txt", units=units)
+    simu.from_file("sample/tut-export-limited.txt", units=units)
     data = simu.undeformed_fbg()
 
     ## Compare results
@@ -109,7 +109,7 @@ def test_deformed_fbg(init_params):
 
     ## Prepare reference simulation
     ref_sim = OSASimulation(
-        filename="sample/tut-export.txt",
+        filename="sample/tut-export-limited.txt",
         NumberFBG=init_params["fbg_count"],
         FBGLength=init_params["fbg_length"],
         Tolerance=init_params["tolerance"],
@@ -141,7 +141,7 @@ def test_deformed_fbg(init_params):
 
     ## Prepare simulation to be tested
     simu = OsaSimulator(**init_params)
-    simu.from_file("sample/tut-export.txt", units=units)
+    simu.from_file("sample/tut-export-limited.txt", units=units)
     data = simu.deformed_fbg(
         strain_type=StrainTypes.NON_UNIFORM,
         stress_type=StressTypes.INCLUDED,
