@@ -118,9 +118,12 @@ class OsaSimulator:
 
         assert len(original_wavelengths) == self.fbg_count
         self.original_wavelengths = np.array(original_wavelengths, dtype=np.float64)
-        self.grating_periods = self.original_wavelengths[: self.fbg_count] / (2.0 * initial_refractive_index)
+        self.grating_periods = self.original_wavelengths[: self.fbg_count] / (
+            2.0 * initial_refractive_index
+        )
         self.original_fbg_periods = [
-            wavelen / (2.0 * self.initial_refractive_index) for wavelen in self.original_wavelengths
+            wavelen / (2.0 * self.initial_refractive_index)
+            for wavelen in self.original_wavelengths
         ]
 
         self.directional_refractive_p11 = directional_refractive_p11
@@ -137,6 +140,18 @@ class OsaSimulator:
         self.fiber_expansion_coefficient = fiber_expansion_coefficient
         self.host_expansion_coefficient = host_expansion_coefficient
         self.youngs_mod = youngs_mod
+
+        self._compute_photo_elastic_coefficient()
+
+    def _compute_photo_elastic_coefficient(self):
+        """
+        Calculate photoelastic coefficient from directional coefficients.
+        """
+        self.photo_elastic_param = (self.initial_refractive_index**2 / 2) * (
+            self.directional_refractive_p12
+            - self.poissons_coefficient
+            * (self.directional_refractive_p11 + self.directional_refractive_p12)
+        )
 
     def from_file(self, filepath: str, units=SiUnits.MILLIMETERS) -> dict:
         """
@@ -223,7 +238,9 @@ class OsaSimulator:
         """
         return pi * self.fringe_visibility * self.mean_change_refractive_index / wavelen
 
-    def transfer_matrix(self, count: int, wavelen: float, use_period, use_dneff: list = []) -> np.ndarray:
+    def transfer_matrix(
+        self, count: int, wavelen: float, use_period, use_dneff: list = []
+    ) -> np.ndarray:
         """
         Calculate the transfer matrix for the FBG based on various parameters.
 
@@ -306,12 +323,6 @@ class OsaSimulator:
         dict
             Dictionary containing the deformed reflection spectrum with keys 'wavelength' and 'reflec'.
         """
-        # Calculate photoelastic coefficient from directional coefficients.
-        self.photo_elastic_param = (self.initial_refractive_index**2 / 2) * (
-            self.directional_refractive_p12
-            - self.poissons_coefficient * (self.directional_refractive_p11 + self.directional_refractive_p12)
-        )
-
         # Apply a theoretical temperature value if specified
         if self.emulate_temperature != -1.0:
             for i in range(self.fbg_count):
@@ -345,7 +356,9 @@ class OsaSimulator:
                     + (1 - self.photo_elastic_param) * strain_avg
                     + thermo_dynamic_effect * (temp_avg - self.ambient_temperature)
                 )
-                fbg_period = [new_wavelength / (2.0 * self.initial_refractive_index) for _ in range(M)]
+                fbg_period = [
+                    new_wavelength / (2.0 * self.initial_refractive_index) for _ in range(M)
+                ]
             elif strain_type == StrainTypes.NON_UNIFORM:
                 fbg_period = [
                     self.original_wavelengths[i]
@@ -374,10 +387,12 @@ class OsaSimulator:
                     - self.poissons_coefficient * self.directional_refractive_p11
                 )
                 self.dneff_y = coef * (
-                    factor1 * sensor_data["S22"] + factor2 * (sensor_data["S33"] + sensor_data["S11"])
+                    factor1 * sensor_data["S22"]
+                    + factor2 * (sensor_data["S33"] + sensor_data["S11"])
                 )
                 self.dneff_z = coef * (
-                    factor1 * sensor_data["S33"] + factor2 * (sensor_data["S22"] + sensor_data["S11"])
+                    factor1 * sensor_data["S33"]
+                    + factor2 * (sensor_data["S22"] + sensor_data["S11"])
                 )
             elif stress_type != StressTypes.NONE:
                 raise ValueError(f"Invalid stress_type: {stress_type}.")
@@ -408,3 +423,286 @@ class OsaSimulator:
         )
 
         return combined_reflection
+
+    def _calculate_strain_stats(self):
+        """
+        Calculates statistics related to strain and stress for each FBG sensor.
+
+        For each FBG sensor, the function computes the average, maximum, and minimum
+        values for different strain and stress types (LE11, LE22, LE33, S11, S22, S33, T).
+
+        Returns
+        -------
+        dict
+            A dictionary with the computed statistics for each FBG sensor.
+        """
+        stat_types = ["AV", "Max", "Min"]
+        measures = ["LE11", "LE22", "LE33", "S11", "S22", "S33", "T"]
+        operations = {"AV": np.mean, "Max": np.max, "Min": np.min}
+
+        stats_dict = {}
+        for i in range(self.fbg_count):
+            fbg_key = f"FBG{i+1}"
+            stats_dict[fbg_key] = {}
+            for measure in measures:
+                data_array = np.array(self.fbg[fbg_key][measure], dtype=np.float64)
+                for stat in stat_types:
+                    if stat in {"Max", "Min"} and measure in {"S11", "S22", "S33", "T"}:
+                        # These are not needed
+                        continue
+                    if stat == "AV" and measure == "T" and self.emulate_temperature != -1.0:
+                        stats_dict[fbg_key][f"{stat}-{measure}"] = self.emulate_temperature
+                    else:
+                        stats_dict[fbg_key][f"{stat}-{measure}"] = operations[stat](data_array)
+
+        return stats_dict
+
+    def _calculate_wave_shift(
+        self, strain_type: StrainTypes, fbg_stat: dict, original_wavelength: np.float64
+    ) -> np.float64:
+        """
+        Calculate the wavelength shift for a given strain type.
+
+        The method computes the wavelength shift based on the provided strain type. For `StrainTypes.NONE`,
+        the shift is determined solely by the thermo-optic effect. For other strain types, the shift
+        is influenced by various factors including photo-elastic parameters, fiber and host expansion
+        coefficients, and thermo-optic effects.
+
+        Parameters
+        ----------
+        strain_type : StrainTypes
+            Type of strain to consider. Options are: NONE, UNIFORM, or NON_UNIFORM.
+        fbg_stat : dict
+            Dictionary containing statistics related to Fiber Bragg Gratings (FBG).
+            Expected to contain keys like "AV-T" for average temperature and "AV-LE11" for average longitudinal strain.
+        original_wavelength : float
+            The original wavelength of the FBG before any strain or temperature effects.
+
+        Returns
+        -------
+        float
+            The calculated wavelength shift based on the provided parameters.
+
+        Notes
+        -----
+        - The calculation is based on the assumption that strain and temperature changes are small
+        enough to be considered linear.
+        - The method uses class attributes such as `self.thermo_optic`, `self.photo_elastic_param`,
+        `self.fiber_expansion_coefficient`, `self.host_expansion_coefficient`, and `self.ambient_temperature`
+        for its calculations.
+        """
+        temperature_diff = fbg_stat["AV-T"] - self.ambient_temperature
+
+        if strain_type == StrainTypes.NONE:
+            return original_wavelength * self.thermo_optic * temperature_diff
+        else:
+            common_term = (1 - self.photo_elastic_param) * fbg_stat["AV-LE11"] + (
+                self.fiber_expansion_coefficient
+                + (1 - self.photo_elastic_param)
+                * (self.host_expansion_coefficient - self.fiber_expansion_coefficient)
+                + self.thermo_optic
+            ) * temperature_diff
+            return original_wavelength * common_term
+
+    def _calculate_grating_periods(
+        self, strain_type: StrainTypes, fbg_stat: dict, original_wavelength: np.float64
+    ) -> tuple:
+        """
+        Calculate the grating periods for the provided strain type.
+
+        For `StrainTypes.NONE` and `StrainTypes.UNIFORM`, both the maximum and
+        minimum grating periods are the same. For `StrainTypes.NON_UNIFORM`, the
+        grating periods are determined separately for the maximum and minimum strains.
+
+        Parameters
+        ----------
+        strain_type : StrainTypes
+            Type of strain to consider. Options are: NONE, UNIFORM, or NON_UNIFORM.
+        fbg_stat : dict
+            Dictionary containing statistics related to Fiber Bragg Gratings (FBG).
+            Expected to contain keys like "AV-T" for average temperature, "AV-LE11" for average
+            longitudinal strain, "Max-LE11" for maximum longitudinal strain, and "Min-LE11" for minimum
+            longitudinal strain.
+        original_wavelength : float
+            The original wavelength of the FBG before any strain or temperature effects.
+
+        Returns
+        -------
+        tuple
+            A tuple containing two values: the maximum grating period and the minimum grating period.
+
+        Notes
+        -----
+        The calculation is based on the assumption that strain and temperature
+        changes are small enough to be considered linear.
+        """
+        temperature_diff = fbg_stat["AV-T"] - self.ambient_temperature
+
+        common_term = (
+            original_wavelength
+            / (2 * self.initial_refractive_index)
+            * (
+                1
+                + (1 - self.photo_elastic_param) * fbg_stat["AV-LE11"]
+                + self.thermo_optic * temperature_diff
+            )
+        )
+
+        if strain_type in [StrainTypes.NONE, StrainTypes.UNIFORM]:
+            return common_term, common_term
+        elif strain_type == StrainTypes.NON_UNIFORM:
+            grating_period_max = (
+                original_wavelength
+                / (2 * self.initial_refractive_index)
+                * (
+                    1
+                    + (1 - self.photo_elastic_param) * fbg_stat["Max-LE11"]
+                    + self.thermo_optic * temperature_diff
+                )
+            )
+            grating_period_min = (
+                original_wavelength
+                / (2 * self.initial_refractive_index)
+                * (
+                    1
+                    + (1 - self.photo_elastic_param) * fbg_stat["Min-LE11"]
+                    + self.thermo_optic * temperature_diff
+                )
+            )
+            return grating_period_max, grating_period_min
+
+    def _calculate_peak_width(
+        self,
+        strain_type: StrainTypes,
+        stress_type: StressTypes,
+        fbg_stat: dict,
+        original_wavelength: np.float64,
+        grating_period_max: np.float64,
+        grating_period_min: np.float64,
+    ) -> np.float64:
+        """
+        Computes the peak width of a Fiber Bragg Grating (FBG) based on strain and
+        stress considerations. The width is influenced by non-uniform strain (if
+        present) and by the transverse stress (if included).
+
+        Parameters
+        ----------
+        strain_type : StrainTypes
+            Type of strain to consider. Options are: NONE, UNIFORM, or NON_UNIFORM.
+        stress_type : StressTypes
+            Type of stress to consider. Options are: NONE or INCLUDED.
+        fbg_stat : dict
+            Dictionary containing statistics related to Fiber Bragg Gratings (FBG).
+            Expected to contain keys like "AV-S33" and "AV-S22" for stress values
+            in different directions.
+        original_wavelength : float
+            The original wavelength of the FBG before any strain or temperature effects.
+        grating_period_max : float
+            Maximum grating period calculated based on strain effects.
+        grating_period_min : float
+            Minimum grating period calculated based on strain effects.
+
+        Returns
+        -------
+        float
+            The calculated peak width for the FBG based on the provided strain and stress types.
+
+        Notes
+        -----
+        The method considers the peak width contributions only if the corresponding
+        strain or stress type is specified.
+        """
+        peak_width_1 = (
+            2 * self.initial_refractive_index * (grating_period_max - grating_period_min)
+            if strain_type == StrainTypes.NON_UNIFORM
+            else 0
+        )
+        peak_width_2 = (
+            (
+                abs(fbg_stat["AV-S33"] - fbg_stat["AV-S22"])
+                * (original_wavelength / (2 * self.initial_refractive_index))
+                * (
+                    (1 + self.poissons_coefficient) * self.directional_refractive_p12
+                    - (1 + self.poissons_coefficient) * self.directional_refractive_p11
+                )
+                * self.initial_refractive_index**3
+                / self.youngs_mod
+            )
+            if stress_type == StressTypes.INCLUDED
+            else 0
+        )
+
+        return peak_width_1 + peak_width_2
+
+    def compute_fbg_shifts_and_widths(
+        self, strain_type: StrainTypes, stress_type: StressTypes
+    ) -> dict:
+        """
+        Calculate the wavelength shift and peak spliting per sensor.
+
+        This method computes the wavelength shift and peak width for each FBG in
+        the set based on the given strain and stress types. The calculations are
+        determined using helper methods for wave shift, grating periods, and peak
+        width.
+
+        Parameters
+        ----------
+        strain_type : StrainTypes
+            Type of strain to consider. Options are: NONE, UNIFORM, or NON_UNIFORM.
+        stress_type : StressTypes
+            Type of stress to consider. Options are: NONE or INCLUDED.
+
+        Returns
+        -------
+        dict
+            A dictionary containing the calculated wavelength shift and peak width
+            for each FBG. The keys are FBG identifiers (e.g., "FBG1", "FBG2", ...),
+            and the values are dictionaries with keys "wave_shift" and "wave_width",
+            each containing a list of corresponding values.
+
+        Raises
+        ------
+        ValueError
+            If the provided strain_type or stress_type is not valid.
+        """
+        if strain_type not in StrainTypes._value2member_map_:
+            raise ValueError(f"{strain_type} is not a valid strain type.")
+
+        if stress_type not in StressTypes._value2member_map_:
+            raise ValueError(f"{strain_type} is not a valid stress type.")
+
+        fbg_stats = self._calculate_strain_stats()
+        self._fbg_stats = fbg_stats
+
+        output = {
+            f"FBG{i+1}": {
+                "wave_shift": np.empty(self.fbg_count, dtype=np.float64),
+                "wave_width": np.empty(self.fbg_count, dtype=np.float64),
+            }
+            for i in range(self.fbg_count)
+        }
+
+        for i in range(self.fbg_count):
+            key = f"FBG{i+1}"
+            fbg_stat = fbg_stats[key]
+            original_wavelength = self.original_wavelengths[i]
+
+            wavelength_shift = self._calculate_wave_shift(
+                strain_type, fbg_stat, original_wavelength
+            )
+            grating_period_max, grating_period_min = self._calculate_grating_periods(
+                strain_type, fbg_stat, original_wavelength
+            )
+            peak_width_total = self._calculate_peak_width(
+                strain_type,
+                stress_type,
+                fbg_stat,
+                self.original_wavelengths[i],
+                grating_period_max,
+                grating_period_min,
+            )
+
+            output[key]["wave_shift"] = wavelength_shift
+            output[key]["wave_width"] = peak_width_total
+
+        return output
