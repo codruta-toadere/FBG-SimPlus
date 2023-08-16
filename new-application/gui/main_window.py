@@ -1,59 +1,314 @@
-import random
 from PySide6.QtWidgets import (
     QWidget,
     QPushButton,
     QLabel,
+    QHBoxLayout,
     QVBoxLayout,
-    QStyle,
+    QLineEdit,
     QGridLayout,
+    QTextEdit,
+    QFileDialog,
+    QCheckBox,
+    QGroupBox,
+    QRadioButton,
 )
-from PySide6 import QtCore
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QTextCursor
+
+from .translator import tr, init_translations
 
 
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.hellos = [
-            "Hello world",
-            "Hallo Welt",
-            "Hei maailma",
-            "Hola Mundo",
-            "Привет мир",
-        ]
+        init_translations()
         self.setup_ui()
 
     def setup_ui(self):
-        self.layout = QVBoxLayout(self)
+        self.layout = QHBoxLayout(self)
 
-        self.icon_grid = self.make_icons_grid_layout()
-        self.layout.addLayout(self.icon_grid)
+        main_layout = self.make_main_layout()
+        self.layout.addLayout(main_layout, 78)
 
-        self.text = QLabel(self.hellos[0], alignment=Qt.AlignCenter)
-        self.layout.addWidget(self.text)
+        side_layout = self.make_side_layout()
+        self.layout.addLayout(side_layout, 22)
 
-        self.button = QPushButton("push")
-        self.layout.addWidget(self.button)
-        self.button.clicked.connect(self.on_click)
+        self.println(tr("Aplicatia a fost initializata cu succes."))
 
-    def make_icons_grid_layout(self):
-        icon_grid = QGridLayout()
+    def make_side_layout(self):
+        title = QLabel(tr("Jurnal mesaje"), self, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        ICON_COLS = 5
-        standard_icons = (
-            si for si in QStyle.StandardPixmap if si.name.startswith("SP_")
+        self.console = QTextEdit(self)
+        self.console.setReadOnly(True)
+
+        clear_button = QPushButton(tr("Sterge jurnal"), self)
+        clear_button.clicked.connect(self.console.clear)
+
+        layout = QVBoxLayout()
+        layout.addWidget(title)
+        layout.addWidget(self.console)
+        layout.addWidget(clear_button)
+
+        return layout
+
+    def make_main_layout(self):
+        grid = QGridLayout()
+
+        section_1 = self.make_loader_section(1)
+        grid.addLayout(section_1, 1, 1)
+
+        section_2 = self.make_deform_types_section(2)
+        grid.addLayout(section_2, 1, 2)
+
+        section_3 = self.make_parameters_section(3)
+        grid.addLayout(section_3, 2, 1)
+
+        section_4 = self.make_virtual_configuration_section(4)
+        grid.addLayout(section_4, 2, 2)
+
+        return grid
+
+    def make_loader_section(self, section_id: int):
+        title = QLabel("({}) {}".format(section_id, tr("Incarca datele de tensiune si deformare")))
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        load_button = QPushButton(tr("Alege fisier"))
+        load_button.clicked.connect(self.load_file)
+
+        self.filepath = QLineEdit(self)
+        self.filepath.setReadOnly(True)
+
+        row = QHBoxLayout()
+        row.addWidget(self.filepath)
+        row.addWidget(load_button)
+
+        si_units_group = QGroupBox(tr("Daca distantele nu sunt exprimate in milimetri [mm]"))
+        use_si_units = QCheckBox(tr("Aplica conversia din m in mm"), si_units_group)
+        group_layout = QVBoxLayout()
+        group_layout.addWidget(use_si_units)
+        si_units_group.setLayout(group_layout)
+
+        layout = QVBoxLayout()
+        layout.addWidget(title)
+        layout.addLayout(row)
+        layout.addWidget(si_units_group)
+        layout.addStretch()
+
+        return layout
+
+    def make_deform_types_section(self, section_id: int):
+        title = QLabel("({}) {}".format(section_id, tr("Alege tipul simularii")))
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        strain_type_group = QGroupBox(tr("Alege tipul de deformare"))
+        strain_group_layout = QVBoxLayout()
+        no_strain = QRadioButton(tr("Fara deformare"), strain_type_group)
+        no_strain.setChecked(True)
+        uniform_strain = QRadioButton(tr("Deformare longitudinala uniforma"), strain_type_group)
+        non_uniform_strain = QRadioButton(
+            tr("Deformare longitudinala neuniforma"), strain_type_group
         )
-        for i, sp in enumerate(standard_icons):
-            icon = self.style().standardIcon(sp)
-            icon_label = QLabel(self)
-            icon_label.setPixmap(icon.pixmap(32))
-            icon_label.setMinimumSize(55, 38)
-            icon_label.setAlignment(Qt.AlignCenter)
-            icon_grid.addWidget(icon_label, i // ICON_COLS, i % ICON_COLS)
+        strain_group_layout.addWidget(no_strain)
+        strain_group_layout.addWidget(uniform_strain)
+        strain_group_layout.addWidget(non_uniform_strain)
+        strain_type_group.setLayout(strain_group_layout)
 
-        return icon_grid
+        stress_type_group = QGroupBox(tr("Alege tipul de tensiune"))
+        stress_group_layout = QVBoxLayout()
+        no_stress = QRadioButton(tr("Fara tensiune"), stress_type_group)
+        no_stress.setChecked(True)
+        included_stress = QRadioButton(tr("Cu tensiune transversala"), stress_type_group)
+        stress_group_layout.addWidget(no_stress)
+        stress_group_layout.addWidget(included_stress)
+        stress_type_group.setLayout(stress_group_layout)
 
-    @QtCore.Slot()
-    def on_click(self):
-        self.text.setText(random.choice(self.hellos))
+        emulation_group = QGroupBox(tr("Optiuni emulare"))
+        row1 = QHBoxLayout()
+        has_emulate_temperature = QCheckBox(tr("Emuleaza temperatura model"), emulation_group)
+        unit_label = QLabel("[K]", emulation_group)
+        emulate_temperature = QLineEdit(
+            "293.15", emulation_group, alignment=Qt.AlignmentFlag.AlignRight
+        )
+        emulate_temperature.setEnabled(False)
+        has_emulate_temperature.toggled.connect(emulate_temperature.setEnabled)
+        row1.addWidget(has_emulate_temperature, stretch=3)
+        row1.addWidget(unit_label)
+        row1.addWidget(emulate_temperature)
+
+        row2 = QHBoxLayout()
+        has_host_expansion = QCheckBox(
+            tr("Coeficientul de dilatatie termica (host)"), emulation_group
+        )
+        unit_label = QLabel("[K<sup>-1</sup>]", emulation_group)
+        host_expansion_coefficient = QLineEdit(
+            "5e-5", emulation_group, alignment=Qt.AlignmentFlag.AlignRight
+        )
+        host_expansion_coefficient.setEnabled(False)
+        has_host_expansion.toggled.connect(host_expansion_coefficient.setEnabled)
+        row2.addWidget(has_host_expansion, stretch=3)
+        row2.addWidget(unit_label)
+        row2.addWidget(host_expansion_coefficient)
+
+        emulation_group_layout = QVBoxLayout()
+        emulation_group_layout.addLayout(row1)
+        emulation_group_layout.addLayout(row2)
+        emulation_group.setLayout(emulation_group_layout)
+
+        layout = QVBoxLayout()
+        layout.addWidget(title)
+        layout.addWidget(strain_type_group)
+        layout.addWidget(stress_type_group)
+        layout.addWidget(emulation_group)
+        layout.addStretch()
+
+        return layout
+
+    def make_parameters_section(self, section_id: int):
+        title = QLabel(
+            "({}) {}".format(section_id, tr("Parametri simulare")),
+            alignment=Qt.AlignmentFlag.AlignCenter,
+        )
+
+        row1, simulation_resolution = self.make_float_parameter(
+            tr("Rezolutia simularii"), "[nm]", "0.05"
+        )
+        row2, max_bandwidth = self.make_float_parameter(
+            tr("Latime de banda maxima"), "[nm]", "1500.00"
+        )
+        row3, min_bandwidth = self.make_float_parameter(
+            tr("Latime de banda minima"), "[nm]", "1600.00"
+        )
+        row4, ambient_temperature = self.make_float_parameter(
+            tr("Temperatura ambientala"), "[K]", "293.15"
+        )
+
+        advanded_group = QGroupBox(
+            tr("Atributele fibrei (mod avansat)"), checkable=True, checked=False
+        )
+
+        row5, initial_refractive_index = self.make_float_parameter(
+            tr("Indicele de refractie initiala"), "[n<sub>eff</sub>]", "1.46"
+        )
+        row6, mean_change_refractive_index = self.make_float_parameter(
+            tr("Variatia medie in indicele de refractie"), "[δn<sub>edd</sub>]", "4.5e-4"
+        )
+        row7, fringe_visibility = self.make_float_parameter(
+            tr("Vizibilitatea franjelor"), "%", "1.0"
+        )
+        row8, directional_refractive_p11 = self.make_float_parameter(
+            tr("Constanta fotoelastica normala (Pockel)"), "p<sub>11</sub>", "0.121"
+        )
+        row9, directional_refractive_p12 = self.make_float_parameter(
+            tr("Constanta fotoelastica de taiere (Pockel)"), "p<sub>12</sub>", "0.270"
+        )
+        row10, youngs_mod = self.make_float_parameter(
+            tr("Modulul de elasticitate (Young)"), "[Pa]", "75e9"
+        )
+        row11, poissons_coefficient = self.make_float_parameter(
+            tr("Coeficientul Poisson"), "", "0.17"
+        )
+        row12, fiber_expansion_coefficient = self.make_float_parameter(
+            tr("Coeficientul de dilatatie termica"), "[K<sup>-1</sup>]", "0.55e-6"
+        )
+        row13, host_expansion_coefficient = self.make_float_parameter(
+            tr("Coeficientul de dilatatie termica (host)"), "[K<sup>-1</sup>]", "8.3e-6"
+        )
+
+        advanced_group_layout = QVBoxLayout()
+        advanced_group_layout.addLayout(row5)
+        advanced_group_layout.addLayout(row6)
+        advanced_group_layout.addLayout(row7)
+        advanced_group_layout.addLayout(row8)
+        advanced_group_layout.addLayout(row9)
+        advanced_group_layout.addLayout(row10)
+        advanced_group_layout.addLayout(row11)
+        advanced_group_layout.addLayout(row12)
+        advanced_group_layout.addLayout(row13)
+        advanded_group.setLayout(advanced_group_layout)
+
+        layout = QVBoxLayout()
+        layout.addWidget(title)
+        layout.addLayout(row1)
+        layout.addLayout(row2)
+        layout.addLayout(row3)
+        layout.addLayout(row4)
+        layout.addWidget(advanded_group)
+        layout.addStretch()
+
+        return layout
+
+    def make_float_parameter(self, display_text: str, unit_text, value_text):
+        row = QHBoxLayout()
+        label = QLabel(display_text)
+        unit_label = QLabel(unit_text)
+        value = QLineEdit(value_text, alignment=Qt.AlignmentFlag.AlignRight)
+        row.addWidget(label, stretch=3)
+        row.addWidget(unit_label)
+        row.addWidget(value)
+        return row, value
+
+    def make_virtual_configuration_section(self, section_id: int):
+        title = QLabel(
+            "({}) {}".format(section_id, tr("Configuratia matricei virtuale FBG")),
+            alignment=Qt.AlignmentFlag.AlignCenter,
+        )
+
+        row1, fbg_count = self.make_float_parameter(tr("Numarul de senzori"), "", "1")
+        row2, fbg_length = self.make_float_parameter(tr("Lungimea"), "mm", "10.0")
+        row3, fbg_length = self.make_float_parameter(tr("Toleranta"), "mm", "0.01")
+
+        positions_group, fbg_positions = self.make_float_list_parameter(
+            tr("Pozitiile senzorilor FBG fata de start"), "[mm]"
+        )
+        wavelengths_group, original_wavelengths = self.make_float_list_parameter(
+            tr("Lungimile de unda originale"), "[nm]"
+        )
+
+        layout = QVBoxLayout()
+        layout.addWidget(title)
+        layout.addLayout(row1)
+        layout.addLayout(row2)
+        layout.addLayout(row3)
+        layout.addWidget(positions_group)
+        layout.addWidget(wavelengths_group)
+        layout.addStretch()
+
+        return layout
+
+    def make_float_list_parameter(self, display_text: str, unit_text):
+        group = QGroupBox(f"{display_text}")
+
+        values = QTextEdit(group)
+        unit_label = QLabel(
+            f"<small>{unit_text}</small>", group, alignment=Qt.AlignmentFlag.AlignCenter
+        )
+        add_button = QPushButton("✚", group)
+        clear_button = QPushButton("✗", group)
+        clear_button.clicked.connect(values.clear)
+
+        actions_layout = QVBoxLayout()
+        actions_layout.addWidget(unit_label)
+        actions_layout.addWidget(add_button)
+        actions_layout.addWidget(clear_button)
+
+        layout = QHBoxLayout()
+        layout.addWidget(values)
+        layout.addLayout(actions_layout)
+        group.setLayout(layout)
+
+        return group, values
+
+    def println(self, text: str):
+        if isinstance(text, str):
+            show_text = text
+        else:
+            show_text = repr(text)
+        self.console.append(show_text)
+        self.console.moveCursor(QTextCursor.MoveOperation.End)
+
+    def load_file(self):
+        fullpath, _ = QFileDialog.getOpenFileName(
+            self, tr("Incarca datele din"), "./sample", "text (*.txt)"
+        )
+        self.filepath.setText(fullpath)
