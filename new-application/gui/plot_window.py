@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 import matplotlib
+
 matplotlib.use("QtAgg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import (
@@ -235,7 +236,9 @@ class SpectrumView(QDialog):
     def read_data_rows(self, model):
         for i in range(self.data["params"]["fbg_count"]):
             key = f"FBG{i+1}"
-            wave_length = locale.format_string("%.0f nm", self.data["params"]["original_wavelengths"][i])
+            wave_length = locale.format_string(
+                "%.0f nm", self.data["params"]["original_wavelengths"][i]
+            )
             wave_shift = locale.format_string("%.15f nm", self.data["summary"][key]["wave_shift"])
             wave_width = locale.format_string("%.15f nm", self.data["summary"][key]["wave_width"])
             self.add_summary_row(model, [wave_length, wave_shift, wave_width])
@@ -268,15 +271,15 @@ class SpectrumView(QDialog):
 
         if self.split.isChecked():
             self.ax.plot(
-                self.data["deformed"]["Y_split"]["wavelength"],
-                self.data["deformed"]["Y_split"]["reflec"],
+                self.data["deformed"]["wavelength"],
+                self.data["deformed"]["Y_split"],
                 color="red",
                 linewidth=self.line_width.value(),
                 label=_("Y-Wave Contribution"),
             )
             self.ax.plot(
-                self.data["deformed"]["Z_split"]["wavelength"],
-                self.data["deformed"]["Z_split"]["reflec"],
+                self.data["deformed"]["wavelength"],
+                self.data["deformed"]["Z_split"],
                 color="green",
                 linewidth=self.line_width.value(),
                 label=_("Z-Wave Contribution"),
@@ -300,7 +303,7 @@ class SpectrumView(QDialog):
             self,
             caption=_("Save FBG Spectrum Plot"),
             dir="./sample",
-            filter="{} (*.png)".format(_("Images"))
+            filter="{} (*.png)".format(_("Images")),
         )
         if to_file:
             self.fig.savefig(to_file)
