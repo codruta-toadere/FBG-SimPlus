@@ -19,9 +19,12 @@ from PySide6.QtWidgets import (
     QFileDialog,
 )
 from PySide6.QtGui import QStandardItem, QStandardItemModel
+import matplotlib
+matplotlib.use("QtAgg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import (
     FigureCanvasQTAgg as FigureCanvas,
+    NavigationToolbar2QT as NavigationToolbar,
 )
 
 
@@ -40,8 +43,8 @@ class SpectrumView(QDialog):
     def setup_ui(self):
         layout = QHBoxLayout(self)
 
-        side_layout = self.make_side_layout()
         plot_layout = self.make_plot_layout()
+        side_layout = self.make_side_layout()
 
         layout.addLayout(plot_layout, 68)
         layout.addLayout(side_layout, 32)
@@ -53,6 +56,8 @@ class SpectrumView(QDialog):
 
         self.fig, self.ax = plt.subplots()
         self.canvas = FigureCanvas(self.fig)
+        self.toolbar = NavigationToolbar(self.canvas, self)
+        self.toolbar.hide()
 
         layout.addWidget(self.canvas)
         return layout
@@ -147,6 +152,9 @@ class SpectrumView(QDialog):
         self.ymin.valueChanged.connect(self.refresh_plot)
         self.ymax.valueChanged.connect(self.refresh_plot)
 
+        enable_panning = QCheckBox(_("Enable panning"), axis_group, checked=False)
+        enable_panning.clicked.connect(self.toolbar.pan)
+
         axis_group_layout.addWidget(x_label, 0, 0)
         axis_group_layout.addWidget(self.xmin, 1, 0)
         axis_group_layout.addWidget(x_between, 1, 1)
@@ -156,6 +164,8 @@ class SpectrumView(QDialog):
         axis_group_layout.addWidget(self.ymin, 3, 0)
         axis_group_layout.addWidget(y_between, 3, 1)
         axis_group_layout.addWidget(self.ymax, 3, 2)
+
+        axis_group_layout.addWidget(enable_panning, 4, 0, 1, 3)
 
         axis_group_layout.setColumnStretch(0, 3)
         axis_group_layout.setColumnStretch(2, 3)
@@ -272,16 +282,17 @@ class SpectrumView(QDialog):
                 label=_("Z-Wave Contribution"),
             )
 
+        self.ax.set_xlabel("{} [nm]".format(_("Wavelength")))
+        self.ax.set_ylabel("{} [R]".format(_("Reflectivity")))
+        self.ax.set_xlim(xmin=self.xmin.value(), xmax=self.xmax.value())
+        self.ax.set_ylim(ymin=self.ymin.value(), ymax=self.ymax.value())
+
         if self.legend.isChecked():
             self.ax.legend()
 
         if self.grid.isChecked():
             self.ax.grid()
 
-        self.ax.set_xlabel("{} [nm]".format(_("Wavelength")))
-        self.ax.set_ylabel("{} [R]".format(_("Reflectivity")))
-        self.ax.set_xlim(xmin=self.xmin.value(), xmax=self.xmax.value())
-        self.ax.set_ylim(ymin=self.ymin.value(), ymax=self.ymax.value())
         self.canvas.draw()
 
     def savePlotFigure(self):
